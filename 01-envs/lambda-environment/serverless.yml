@@ -1,0 +1,60 @@
+org: diegomachado
+app: lambda-environment
+
+service: lambda-environment
+
+provider:
+  name: aws
+  runtime: nodejs12.x
+  stage: ${opt:stage, "qa"}
+  region: us-east-1
+  environment:
+    "NODE_ENV": "qa"
+    "APICommitMessagesURL": "http://whatthecommit.com/"
+    "DbTableName": "CommitMessages-qa"
+    "DbWriteCapacityUnits": 1
+    "DbReadCapacityUnits": 1
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+      Resource: "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.tableName}"
+
+custom:
+  schedulerRate: rate(1 minute)
+  enabled: true
+  tableName: ${self:provider.environment.DbTableName}
+  dbWriteCapacityUnits: ${self:provider.environment.DbWriteCapacityUnits}
+  dbReadCapacityUnits: ${self:provider.environment.DbReadCapacityUnits}
+
+resources:
+  Resources:
+    Table:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableName}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: commitMessage
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: commitMessage
+            KeyType: RANGE
+
+        ProvisionedThroughput:
+          ReadCapacityUnits: ${self:custom.dbReadCapacityUnits}
+          WriteCapacityUnits: ${self:custom.dbWriteCapacityUnits}
+
+functions:
+  commit-message-scheduler:
+    handler: handler.scheduler
+    events:
+      - schedule:
+          rate: ${self:custom.schedulerRate}
+          name: schedule-commit-message-${self:provider.stage}
+          description: get commit messages each minute
+          enabled: true
